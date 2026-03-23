@@ -1,0 +1,236 @@
+import streamlit as st
+import pandas as pd
+import duckdb
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# -----------------------------
+# PAGE CONFIG + DARK THEME
+# -----------------------------
+st.set_page_config(
+    page_title="CheQ Data Platform",
+    page_icon="⚡",
+    layout="wide"
+)
+
+st.markdown("""
+<style>
+body { background-color: #0f172a; color: white; }
+.main { background-color: #0f172a; }
+h1, h2, h3 { color: white; }
+.stButton>button {
+    background-color: #ff4d4f;
+    color: white;
+    border-radius: 10px;
+    height: 3em;
+    width: 100%;
+}
+section[data-testid="stSidebar"] {
+    background-color: #020617;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -----------------------------
+# LOGIN SYSTEM
+# -----------------------------
+def login():
+    st.title("🔐 CheQ Internal Login")
+    email = st.text_input("Company Email")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if email.endswith("@cheq.com") and password == "cheq123":
+            st.session_state["logged_in"] = True
+        else:
+            st.error("Access denied")
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    login()
+    st.stop()
+
+# -----------------------------
+# NAVBAR
+# -----------------------------
+col1, col2, col3 = st.columns([1, 6, 1])
+
+with col1:
+    st.image("cheq_logo.png", width=60)
+
+with col2:
+    st.markdown("### ⚡ CheQ Data Platform")
+
+with col3:
+    st.markdown("🔒 Internal")
+
+# -----------------------------
+# SIDEBAR
+# -----------------------------
+st.sidebar.image("cheq_logo.png", width=120)
+st.sidebar.markdown("## ⚡ CheQ Dashboard")
+
+st.sidebar.markdown("### 📂 Upload Data")
+file1 = st.sidebar.file_uploader("Dataset 1", type=["csv"])
+file2 = st.sidebar.file_uploader("Dataset 2", type=["csv"])
+
+# -----------------------------
+# MAIN LOGIC
+# -----------------------------
+if file1 and file2:
+
+    st.markdown("## 🔍 Data Preview")
+
+    df1_preview = pd.read_csv(file1, nrows=100)
+    df2_preview = pd.read_csv(file2, nrows=100)
+
+    c1, c2 = st.columns(2)
+    c1.dataframe(df1_preview)
+    c2.dataframe(df2_preview)
+
+    # Load full data
+    df1 = pd.read_csv(file1)
+    df2 = pd.read_csv(file2)
+
+    st.success("✅ Data Loaded")
+
+    # -----------------------------
+    # DATA CLEANING
+    # -----------------------------
+    st.markdown("## 🧹 Data Cleaning")
+
+    clean_nulls = st.checkbox("Remove null values")
+    trim_spaces = st.checkbox("Trim spaces", True)
+    lower_case = st.checkbox("Convert to lowercase")
+
+    def clean_df(df):
+        if trim_spaces:
+            df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+        if lower_case:
+            df = df.applymap(lambda x: x.lower() if isinstance(x, str) else x)
+        if clean_nulls:
+            df = df.dropna()
+        return df
+
+    df1 = clean_df(df1)
+    df2 = clean_df(df2)
+
+    st.success("✅ Cleaning Applied")
+
+    # -----------------------------
+    # AI MATCHING (ML)
+    # -----------------------------
+    st.markdown("## 🧠 AI Column Matching")
+
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    cols1 = df1.columns.tolist()
+    cols2 = df2.columns.tolist()
+
+    emb1 = model.encode(cols1)
+    emb2 = model.encode(cols2)
+
+    matches = []
+
+    for i, col1_name in enumerate(cols1):
+        sims = cosine_similarity([emb1[i]], emb2)[0]
+        idx = sims.argmax()
+        score = sims[idx]
+        matches.append((col1_name, cols2[idx], round(score, 2)))
+
+    matches = sorted(matches, key=lambda x: x[2], reverse=True)
+
+    st.write("Top Matches:")
+    for m in matches[:5]:
+        st.write(f"🔹 {m[0]} ↔ {m[1]} (score: {m[2]})")
+
+    default_col1, default_col2, _ = matches[0]
+
+    use_ai = st.checkbox("Use AI Best Match", True)
+
+    if use_ai:
+        join_col1 = default_col1
+        join_col2 = default_col2
+    else:
+        join_col1 = st.selectbox("Dataset 1 column", cols1)
+        join_col2 = st.selectbox("Dataset 2 column", cols2)
+
+    # -----------------------------
+    # DUPLICATE DETECTION
+    # -----------------------------
+    st.markdown("## 🔍 Duplicate Detection")
+
+    dup1 = df1.duplicated(subset=[join_col1]).sum()
+    dup2 = df2.duplicated(subset=[join_col2]).sum()
+
+    d1, d2 = st.columns(2)
+    d1.metric("Dataset 1 Duplicates", dup1)
+    d2.metric("Dataset 2 Duplicates", dup2)
+
+    remove_dups = st.checkbox("Remove duplicates")
+
+    if remove_dups:
+        df1 = df1.drop_duplicates(subset=[join_col1])
+        df2 = df2.drop_duplicates(subset=[join_col2])
+        st.success("Duplicates removed")
+
+    # -----------------------------
+    # JOIN TYPE
+    # -----------------------------
+    join_type = st.selectbox(
+        "🔗 Join Type",
+        ["inner", "left", "right", "outer"]
+    )
+
+    # -----------------------------
+    # RUN JOIN
+    # -----------------------------
+    if st.button("🚀 Run Join"):
+
+        with st.spinner("Processing large dataset..."):
+
+            con = duckdb.connect()
+            con.register("df1", df1)
+            con.register("df2", df2)
+
+            query = f"""
+            SELECT *
+            FROM df1
+            {join_type.upper()} JOIN df2
+            ON df1.{join_col1} = df2.{join_col2}
+            """
+
+            result = con.execute(query).fetch_df()
+
+        st.success("✅ Join Completed!")
+
+        # -----------------------------
+        # INSIGHTS
+        # -----------------------------
+        st.markdown("## 📊 Join Insights")
+
+        total = len(result)
+        matched = result[join_col1].notnull().sum()
+        unmatched = total - matched
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Rows", total)
+        c2.metric("Matched Rows", matched)
+        c3.metric("Unmatched Rows", unmatched)
+
+        # -----------------------------
+        # OUTPUT
+        # -----------------------------
+        st.markdown("## 📄 Result Preview")
+        st.dataframe(result.head(100))
+
+        csv = result.to_csv(index=False)
+
+        st.download_button(
+            "⬇️ Download Result",
+            csv,
+            "joined_output.csv",
+            "text/csv"
+        )
