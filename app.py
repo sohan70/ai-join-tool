@@ -81,20 +81,28 @@ file2 = st.sidebar.file_uploader("Dataset 2", type=["csv"])
 # -----------------------------
 if file1 and file2:
 
-    st.markdown("## 🔍 Data Preview")
+st.markdown("## 🔍 Data Preview")
 
-    df1_preview = pd.read_csv(file1, nrows=100)
-    df2_preview = pd.read_csv(file2, nrows=100)
+# Preview (reads first 100 rows)
+df1_preview = pd.read_csv(file1, nrows=100)
+df2_preview = pd.read_csv(file2, nrows=100)
 
-    c1, c2 = st.columns(2)
-    c1.dataframe(df1_preview)
-    c2.dataframe(df2_preview)
+c1, c2 = st.columns(2)
+c1.dataframe(df1_preview)
+c2.dataframe(df2_preview)
 
-    # Load full data
+# 🔥 VERY IMPORTANT: Reset file pointer
+file1.seek(0)
+file2.seek(0)
+
+# Load full data safely
+try:
     df1 = pd.read_csv(file1)
     df2 = pd.read_csv(file2)
-
     st.success("✅ Data Loaded")
+except Exception:
+    st.error("❌ Failed to read file. Please upload a valid CSV.")
+    st.stop()
 
     # -----------------------------
     # DATA CLEANING
