@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import duckdb
+import os
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -58,7 +59,10 @@ if not st.session_state["logged_in"]:
 col1, col2, col3 = st.columns([1, 6, 1])
 
 with col1:
-    st.image("cheq_logo.png", width=60)
+    if os.path.exists("cheq_logo.png"):
+        st.image("cheq_logo.png", width=60)
+    else:
+        st.write("⚡")
 
 with col2:
     st.markdown("### ⚡ CheQ Data Platform")
@@ -69,7 +73,9 @@ with col3:
 # -----------------------------
 # SIDEBAR
 # -----------------------------
-st.sidebar.image("cheq_logo.png", width=120)
+if os.path.exists("cheq_logo.png"):
+    st.sidebar.image("cheq_logo.png", width=120)
+
 st.sidebar.markdown("## ⚡ CheQ Dashboard")
 
 st.sidebar.markdown("### 📂 Upload Data")
@@ -81,28 +87,31 @@ file2 = st.sidebar.file_uploader("Dataset 2", type=["csv"])
 # -----------------------------
 if file1 and file2:
 
-st.markdown("## 🔍 Data Preview")
+    st.markdown("## 🔍 Data Preview")
 
-# Preview (reads first 100 rows)
-df1_preview = pd.read_csv(file1, nrows=100)
-df2_preview = pd.read_csv(file2, nrows=100)
+    try:
+        df1_preview = pd.read_csv(file1, nrows=100)
+        df2_preview = pd.read_csv(file2, nrows=100)
+    except Exception:
+        st.error("❌ Error reading preview. Please upload valid CSV files.")
+        st.stop()
 
-c1, c2 = st.columns(2)
-c1.dataframe(df1_preview)
-c2.dataframe(df2_preview)
+    c1, c2 = st.columns(2)
+    c1.dataframe(df1_preview)
+    c2.dataframe(df2_preview)
 
-# 🔥 VERY IMPORTANT: Reset file pointer
-file1.seek(0)
-file2.seek(0)
+    # 🔥 FIX: Reset file pointer
+    file1.seek(0)
+    file2.seek(0)
 
-# Load full data safely
-try:
-    df1 = pd.read_csv(file1)
-    df2 = pd.read_csv(file2)
-    st.success("✅ Data Loaded")
-except Exception:
-    st.error("❌ Failed to read file. Please upload a valid CSV.")
-    st.stop()
+    # Full load
+    try:
+        df1 = pd.read_csv(file1)
+        df2 = pd.read_csv(file2)
+        st.success("✅ Data Loaded")
+    except Exception:
+        st.error("❌ Failed to read full dataset. Check file format.")
+        st.stop()
 
     # -----------------------------
     # DATA CLEANING
